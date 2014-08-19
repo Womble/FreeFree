@@ -11,16 +11,17 @@ double integrate (double *column, double cellLength, int size){
     if (column[2*i]>0){ //we're not going to even attempt negative optical depths, assuming they are erronious rather than masing
       if (column[2*i]>10) intensity=column[2*i+1]; //for cells of high optical depth set intensity to saturated value
       else{
-	n=(20*column[2*i]);
-	if (n<1)   n=1;
-	dt=column[2*i]/n;
-	for (j=0;j<n;j++){ //#integrate in steps of tau~=1/20 i.e intensity drop of ~5%
-	  //	printf("%d: %.3e -> ",i,intensity);
-	  intensity+=dt*(column[2*i+1]-intensity);
-	  if(intensity<0) intensity=0; //this is probably unnecessary, but im being paranoid atm
-	  //printf("%.3e %.3e -> %.3e\n",dt,column[2*i+1], intensity);
-	}
+      	n=(20*column[2*i]);
+      	if (n<1)   n=1;
+      	dt=column[2*i]/n;
+      	for (j=0;j<n;j++){ //#integrate in steps of tau~=1/20 i.e intensity drop of ~5%
+      	  //	printf("%d: %.3e -> ",i,intensity);
+      	  intensity+=dt*(column[2*i+1]-intensity);
+      	  if(intensity<0) intensity=0; //this is probably unnecessary, but im being paranoid atm
+      	  //printf("%.3e %.3e -> %.3e\n",dt,column[2*i+1], intensity);
+      	}
       }
+      //intensity=intensity*exp(-column[2*i])+column[2*i+1]*column[2*i];
     }
   }
   return intensity;
