@@ -1,4 +1,6 @@
 FreeFree
 ========
 
-caclulates thermal fre free radio emission from aribtrary density and temperature cubes
+python script to caclulate thermal free free radio emission from aribtrary 
+density and temperature cubes and from any angle (units in cgs)
+
