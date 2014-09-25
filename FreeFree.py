@@ -6,9 +6,10 @@ from scipy.ndimage.interpolation import rotate
 from ctypes import *
 from numpy.ctypeslib import ndpointer
 try:
-    libpath='/localhome/pytd/opt/radio-py/integ.so'
+    libpath='/home/student13/pytd/home.linux/.local/lib/python2.7/site-packages/FreeFree/integ.so'
     lib=CDLL(libpath)
-    func=lib.integrate # for example
+    func=lib.integrate 
+    print 'importing integration routine from %s'%libpath
     func.argtypes = [ndpointer(c_double), c_double, c_size_t]
     func.restype = c_double
 except:
@@ -17,15 +18,17 @@ except:
 PC2CM = 3.085678e18 #1pc in cm
 SQRAD2STR = 1/(pi*0.25) #convert square radians to steradians
 
-#def integrate (column, cellLength):
-#    "columns should be a 1D array containing dt, epsilons and kappas  in the first second and third third /// this is the heavy lifting part and should be ported to C"
-#    intensity=0
-#    l=column.size
- #   if l%3!=0 : raise ValueError('column cannont be split into thirds')
- #   for i in xrange(l/3):
- #       expDt=exp(-column[3*i]/cellLength)        
- #       intensity= intensity*expDt+column[3*i+1]*(1-expDt)/column[3*i+2]  
- #   return intensity
+def integratePY (column, cellLength):
+    "columns should be a 1D array containing dt, epsilons and kappas  in the first second and third third /// this is the heavy lifting part and should be ported to C"
+    intensity=0
+    l=column.size
+    if l%2!=0 : raise ValueError('column cannont be split into halves')
+    for i in xrange(l/2):
+        n=max(1,int(2*column[2*i]))
+        dt=column[2*i]/n
+        for j in xrange(n):
+            intensity+=dt*(column[2*i+1]-intensity)
+    return intensity
 
 class freeFree():
     def __init__(self,Rho, Temp, Length):
@@ -38,15 +41,27 @@ class freeFree():
         return self.npls[0]+self.npls[1]*2+self.npls[2]*3+self.npls[3]*6
 
     def epsNkap(self,nu):
-        self.eps,self.kap=emiss(self.npls, self.t, nu)
-    
+        self.eps,self.kap,self.gaunts=emiss(self.npls, self.t, nu)
+
     def taus(self,nu):
         self.epsNkap(nu)
         self.dt=self.kap*self.length
+
+    def rotatecube(theta=0,phi=0):
+        if (int(phi)%360)!=0:
+            rho =rotate(self.rho,phi,  (0,1), mode='nearest', order=1)
+            temp=rotate(self.t,phi, (0,1), mode='nearest', order=1)
+        if (int(theta)%360)!=0:
+            rho =rotate(rho,theta, (1,2), mode='nearest', order=1)
+            temp=rotate(temp,theta,(1,2), mode='nearest', order=1)
+        rho[rho<0]=1e-30
+        temp[temp<1]=1
+        self.rho=rho
+        self.t=temp
         
     def rayTrace(self,nu,theta=0,phi=0, dist=500):
         "integrate along the specified axis after rotating the cube through phi and theta (in deg)"
-        if dist<1.5e13: dist*=PC2CM #assume distances less than 1au are in parsecs, otherwise in cm
+        if dist<1e9: dist*=PC2CM #assume distances less than 10^9 are given im parsecs, larger in cm
 
         try:
             flag=self.dt.any()
@@ -65,14 +80,22 @@ class freeFree():
             if (int(theta)%360)!=0:
                 rho =rotate(rho,theta, (1,2), mode='nearest', order=1)
                 temp=rotate(temp,theta,(1,2), mode='nearest', order=1)
+            rho[rho<0]=1e-30
+            temp[temp<1]=1
             tempcube=freeFree(rho, temp, self.length)
             tempcube.taus(nu)
         f=lambda x : func(x,self.length, x.size)
+#        f=lambda x : integratePY(x,self.length)
         s=tempcube.dt.shape
+        source=(tempcube.eps/tempcube.kap)
+        source[isnan(source)]=0
         arr=empty((s[0],s[1],2*s[2]))
-        arr[:,:,1::2]=tempcube.eps[::-1] #emission,coef * celllength 
-        arr[:,:,::2]=tempcube.kap[::-1]   #invert z axis so we integrate from the far side towards observer over the z axis
+        tempcube.dt[tempcube.dt<1e-30]=1e-30 #dont allow tau of cell to be less than 1e-30
+        arr[:,:,::2]=tempcube.dt[::-1]   #invert z axis so we integrate from the far side towards observer over the z axis
+        arr[:,:,1::2]=source[::-1]       #source function (eps/kap)
         out=apply_along_axis(f,-1,arr)    # to c after the rotation and do the integrating there
         #apply_along_axis takes 1D z slices through the cube and passes them to integrate
         pix =abs(self.length/dist)
+        print pix
+        print pix*pix*SQRAD2STR*1e26 #output in mJy/pix
         return out*pix*pix*SQRAD2STR*1e26 #output in mJy/pix
