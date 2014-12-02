@@ -30,8 +30,13 @@ def integratePY (column, cellLength):
             intensity+=dt*(column[2*i+1]-intensity)
     return intensity
 
+def doppler (vr):
+    "dopller shift, +ve= towards observer, assumes given in lightspeed units if no values >1 else in cm/s"
+    if (abs(vr)>=1).any(): vr/cns.speed_of_light/100
+    return sqrt((1+vr)/(1-vr))
+
 class freeFree():
-    def __init__(self,Rho, Temp, Length):
+    def __init__(self,Rho, Temp, Length, v=None):
         self.rho=Rho
         self.t=Temp
         self.npls=eDensity(Rho,Temp)
@@ -39,15 +44,19 @@ class freeFree():
 
     def ne(self):
         return self.npls[0]+self.npls[1]*2+self.npls[2]*3+self.npls[3]*6
-
+    
     def epsNkap(self,nu):
         self.eps,self.kap,self.gaunts=emiss(self.npls, self.t, nu)
+        #assume emission lines are optically thin themselves so no absorbtion coefficient from photo-ionoisation
+        #centre_nu=nu0*doppler(self.v[...,2])
+        #sigma2=(cns.Boltzmann*self.t/cns.m_p/cns.speed_of_light**2)*centre_nu**2
+        #line_eps+=self.ne()*self.npls[0]* 2.076e-11*2.2/np.sqrt(self.t) * exp(-(nu-centre_nu)**2/2/sigma2)
 
     def taus(self,nu):
         self.epsNkap(nu)
         self.dt=self.kap*self.length
 
-    def rotatecube(theta=0,phi=0):
+    def rotatecube(self,theta=0,phi=0):
         if (int(phi)%360)!=0:
             rho =rotate(self.rho,phi,  (0,1), mode='nearest', order=1)
             temp=rotate(self.t,phi, (0,1), mode='nearest', order=1)
@@ -59,7 +68,7 @@ class freeFree():
         self.rho=rho
         self.t=temp
         
-    def rayTrace(self,nu,theta=0,phi=0, dist=500):
+    def rayTrace(self,nu,theta=0,phi=0, dist=500, returnRotatedCube=0):
         "integrate along the specified axis after rotating the cube through phi and theta (in deg)"
         if dist<1e9: dist*=PC2CM #assume distances less than 10^9 are given im parsecs, larger in cm
 
@@ -77,6 +86,7 @@ class freeFree():
             if (int(phi)%360)!=0:
                 rho =rotate(rho,phi,  (0,1), mode='nearest', order=1)
                 temp=rotate(temp,phi, (0,1), mode='nearest', order=1)
+                #need to include rotation to vel field in here              
             if (int(theta)%360)!=0:
                 rho =rotate(rho,theta, (1,2), mode='nearest', order=1)
                 temp=rotate(temp,theta,(1,2), mode='nearest', order=1)
@@ -97,5 +107,5 @@ class freeFree():
         #apply_along_axis takes 1D z slices through the cube and passes them to integrate
         pix =abs(self.length/dist)
         print pix
-        print pix*pix*SQRAD2STR*1e26 #output in mJy/pix
-        return out*pix*pix*SQRAD2STR*1e26 #output in mJy/pix
+        if returnRotatedCube:return out*pix*pix*SQRAD2STR*1e26,tempcube 
+        else :               return out*pix*pix*SQRAD2STR*1e26 #output in mJy/pix
