@@ -35,12 +35,42 @@ def doppler (vr):
     if (abs(vr)>=1).any(): vr/cns.speed_of_light/100
     return sqrt((1+vr)/(1-vr))
 
+def trimCube(cube, thresh):
+    "returns the silce which trims planes off cube if all the values in the plane are < thresh"
+    sl=[]
+    for j,s in enumerate(cube.shape):
+        a,b,i,flag=0,0,0,0
+        while i<s and not(flag):
+            if j==0:
+                if (cube[i,:,:]<thresh).all(): a+=1
+                else                 : flag=1
+            elif j==1:
+                if (cube[:,i,:]<thresh).all(): a+=1
+                else                 : flag=1
+            else :
+                if (cube[:,:,i]<thresh).all(): a+=1
+                else                 : flag=1
+            i+=1
+        i,flag=0,0
+        while i<s and not(flag):
+            if j==0:
+                if (cube[-i,:,:]<thresh).all(): b-=1
+                else                 : flag=1
+            elif j==1:
+                if (cube[:,-i,:]<thresh).all(): b-=1
+                else                 : flag=1
+            else :
+                if (cube[:,:,-i]<thresh).all(): b-=1
+                else                  : flag=1
+            i+=1
+        sl.append(slice(a,b))
+    return sl
+
 class freeFree():
     def __init__(self,Rho, Temp, Length, v=None):
         "Rho in g/cm^3"
         self.rho=Rho
         self.t=Temp
-        self.npls=eDensity(Rho,Temp)
         self.length=Length #length per unit cell (in cms, ew)
 
     def ne(self):
@@ -54,22 +84,23 @@ class freeFree():
         #line_eps+=self.ne()*self.npls[0]* 2.076e-11*2.2/np.sqrt(self.t) * exp(-(nu-centre_nu)**2/2/sigma2)
 
     def taus(self,nu):
+        self.npls=eDensity(self.rho,self.t)
         self.epsNkap(nu)
         self.dt=self.kap*self.length
 
     def rotatecube(self,theta=0,phi=0):
-        rho=self.rho
-        temp=self.t
+        rho=self.rho.copy()
+        t=self.t.copy()
         if (int(phi)%360)!=0:
-            rho =rotate(self.rho,phi,  (0,1), mode='nearest', order=1)
-            temp=rotate(self.t,phi, (0,1), mode='nearest', order=1)
+            rho =rotate(rho,phi,  (0,1), mode='nearest', order=1)
+            t=rotate(t,phi, (0,1), mode='nearest', order=1)
         if (int(theta)%360)!=0:
             rho =rotate(rho,theta, (1,2), mode='nearest', order=1)
-            temp=rotate(temp,theta,(1,2), mode='nearest', order=1)
+            t=rotate(t,theta,(1,2), mode='nearest', order=1)
         rho[rho<0]=1e-30
-        temp[temp<1]=1
+        t[t<1]=1
         self.rho=rho
-        self.t=temp
+        self.t=t
         
     def rayTrace(self,nu,theta=0,phi=0, dist=500, returnRotatedCube=0):
         "integrate along the specified axis after rotating the cube through phi and theta (in deg)"
@@ -82,20 +113,9 @@ class freeFree():
         if theta==0 and phi==0 and flag:
             tempcube=self
             print 'reusing dt'
-
         else :
-            rho=self.rho
-            temp=self.t
-            if (int(phi)%360)!=0:
-                rho =rotate(rho,phi,  (0,1), mode='nearest', order=1)
-                temp=rotate(temp,phi, (0,1), mode='nearest', order=1)
-                #need to include rotation to vel field in here              
-            if (int(theta)%360)!=0:
-                rho =rotate(rho,theta, (1,2), mode='nearest', order=1)
-                temp=rotate(temp,theta,(1,2), mode='nearest', order=1)
-            rho[rho<0]=1e-30
-            temp[temp<1]=1
-            tempcube=freeFree(rho, temp, self.length)
+            tempcube=freeFree(self.rho.copy(), self.t.copy(), self.length)
+            tempcube.rotatecube(theta,phi)
             tempcube.taus(nu)
         f=lambda x : func(x,self.length, x.size)
 #        f=lambda x : integratePY(x,self.length)
@@ -104,8 +124,8 @@ class freeFree():
         source[isnan(source)]=0
         arr=empty((s[0],s[1],2*s[2]))
         tempcube.dt[tempcube.dt<1e-30]=1e-30 #dont allow tau of cell to be less than 1e-30
-        arr[:,:,::2]=tempcube.dt[::-1]   #invert z axis so we integrate from the far side towards observer over the z axis
-        arr[:,:,1::2]=source[::-1]       #source function (eps/kap)
+        arr[:,:,::2]=tempcube.dt[:,:,::-1]   #invert z axis so we integrate from the far side towards observer over the z axis
+        arr[:,:,1::2]=source[:,:,::-1]       #source function (eps/kap)
         out=apply_along_axis(f,-1,arr)    # to c after the rotation and do the integrating there
         #apply_along_axis takes 1D z slices through the cube and passes them to integrate
         pix =abs(self.length/dist)
