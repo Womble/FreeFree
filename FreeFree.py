@@ -37,6 +37,7 @@ def doppler (vr):
 
 class freeFree():
     def __init__(self,Rho, Temp, Length, v=None):
+        "Rho in g/cm^3"
         self.rho=Rho
         self.t=Temp
         self.npls=eDensity(Rho,Temp)
@@ -57,6 +58,8 @@ class freeFree():
         self.dt=self.kap*self.length
 
     def rotatecube(self,theta=0,phi=0):
+        rho=self.rho
+        temp=self.t
         if (int(phi)%360)!=0:
             rho =rotate(self.rho,phi,  (0,1), mode='nearest', order=1)
             temp=rotate(self.t,phi, (0,1), mode='nearest', order=1)
