@@ -3,6 +3,7 @@
 #include "math.h"
 #include "stdio.h"
 
+
 double integrate (double *column, int* shape, double* out){
   //column is a 1D array for the form [dt_0,S_0,dt_1,S_1,dt_2...,dt_size/2,S_size/2]
   double intensity, dt,S;
