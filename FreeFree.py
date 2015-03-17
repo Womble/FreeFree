@@ -1,34 +1,50 @@
 from numpy import *
 from scipy import constants as cns
-from emiss import emiss,eDensity
 from scipy.ndimage.interpolation import rotate
+from scipy.stats.mstats import gmean
+from utils import almost_eq
 
-from ctypes import *
-from numpy.ctypeslib import ndpointer
-try:
-    libpath='/home/student13/pytd/home.linux/.local/lib/python2.7/site-packages/FreeFree/integ.so'
-    lib=CDLL(libpath)
-    func=lib.integrate 
-    print 'importing integration routine from %s'%libpath
-    func.argtypes = [ndpointer(c_double), c_double, c_size_t]
-    func.restype = c_double
-except:
-    print "cant import c funtion for integrating from "+libpath+", has integ.c been compiled with -fPIC and -shared?"
+from emiss import emiss,eDensity
+
+#from ctypes import *
+#from numpy.ctypeslib import ndpointer
+#try:
+#    libpath='/home/student13/pytd/home.linux/.local/lib/python2.7/site-packages/FreeFree/integ.so'
+#    lib=CDLL(libpath)
+#    Cfunc=lib.integrate 
+#    print 'importing integration routine from %s'%libpath
+#    Cfunc.argtypes = [ndpointer(c_double), ndpointer(c_size_t), ndpointer(c_double, flags='W')]
+#    Cfunc.restype = c_double
+#except:
+#    print "cant import c funtion for integrating from "+libpath+", has integ.c been compiled with -fPIC and -shared?"
 
 PC2CM = 3.085678e18 #1pc in cm
-SQRAD2STR = 1/(pi*0.25) #convert square radians to steradians
+SQRAD2STR = 4/pi #convert square radians to steradians
 
-def integratePY (column, cellLength):
-    "columns should be a 1D array containing dt, epsilons and kappas  in the first second and third third /// this is the heavy lifting part and should be ported to C"
-    intensity=0
-    l=column.size
-    if l%2!=0 : raise ValueError('column cannont be split into halves')
-    for i in xrange(l/2):
-        n=max(1,int(2*column[2*i]))
-        dt=column[2*i]/n
-        for j in xrange(n):
-            intensity+=dt*(column[2*i+1]-intensity)
-    return intensity
+def integrate (source, dt):
+    assert source.shape == dt.shape
+    s=source.shape
+    out=zeros_like(source[...,0])
+    tmp=out.copy()
+    mask=zeros_like(out, dtype=bool)
+    for i in xrange(s[-1]):
+        if dt[...,i].max()>0.1:
+            n=5+min(20, int(0.75/dt[...,i].max()))
+            for _ in xrange(n):
+                tmp[...]=source[...,i]
+                tmp-=out
+                tmp*=dt[...,i]
+                tmp/=n
+                out+=tmp
+            mask[...]=dt[...,i]>10
+            out[mask]=source[...,i][mask]
+        else:
+            tmp[...]=source[...,i]
+            tmp-=out
+            tmp*=dt[...,i]
+            out+=tmp
+    return out
+
 
 def doppler (vr):
     "dopller shift, +ve= towards observer, assumes given in lightspeed units if no values >1 else in cm/s"
@@ -67,8 +83,10 @@ def trimCube(cube, thresh):
     return sl
 
 class freeFree():
-    def __init__(self,Rho, Temp, Length, v=None):
-        "Rho in g/cm^3"
+    def __init__(self,Rho, Temp, Length):#, v=None):
+        """Rho is ion density cube in g/cm^3
+Temp is temperature cube in K (Rho and Temp need to have the same shape)
+Length is the size of one cell in the Rho and Temp cubes"""
         self.rho=Rho
         self.t=Temp
         self.length=Length #length per unit cell (in cms, ew)
@@ -88,47 +106,65 @@ class freeFree():
         self.epsNkap(nu)
         self.dt=self.kap*self.length
 
-    def rotatecube(self,theta=0,phi=0):
+    def rotatecube(self,theta=0,phi=0, trim=0):
+        "angles in degrees"
         rho=self.rho.copy()
         t=self.t.copy()
-        if (int(phi)%360)!=0:
-            rho =rotate(rho,phi,  (0,1), mode='nearest', order=1)
-            t=rotate(t,phi, (0,1), mode='nearest', order=1)
         if (int(theta)%360)!=0:
             rho =rotate(rho,theta, (1,2), mode='nearest', order=1)
-            t=rotate(t,theta,(1,2), mode='nearest', order=1)
-        rho[rho<0]=1e-30
+            t=   rotate(t,  theta, (1,2), mode='nearest', order=1)
+        if (int(phi)%360)!=0:
+            rho =rotate(rho,phi, (0,1), mode='nearest', order=1)
+            t=rotate   (t,  phi, (0,1), mode='nearest', order=1)
+        rho[rho<1e-30]=1e-30
         t[t<1]=1
-        self.rho=rho
-        self.t=t
+        thresh=rho
+        if trim:
+            for _ in rho.shape:
+                thresh=gmean(thresh)
+            sl=trimCube(rho, thresh*5)
+            self.rho=rho[sl]
+            self.t=t[sl]
+        else:
+            self.rho=rho
+            self.t=t
+        try:
+            self.dt[...]=0
+        except AttributeError:
+            None
         
-    def rayTrace(self,nu,theta=0,phi=0, dist=500, returnRotatedCube=0):
+    def rayTrace(self,nu,theta=0,phi=0, dist=500, returnRotatedCube=0, transpose=0):
         "integrate along the specified axis after rotating the cube through phi and theta (in deg)"
         if dist<1e9: dist*=PC2CM #assume distances less than 10^9 are given im parsecs, larger in cm
 
         try:
-            flag=self.dt.any()
+            flag=self.dt.any() and almost_eq(nu,self.lastnu)
         except:
             flag=0
-        if theta==0 and phi==0 and flag:
+        if theta==0 and phi==0:
             tempcube=self
-            print 'reusing dt'
+            if flag:
+                print 'reusing dt'
+            else:
+                print 'calculating taus'
+                self.taus(nu)
+                self.lastnu=nu
         else :
             tempcube=freeFree(self.rho.copy(), self.t.copy(), self.length)
             tempcube.rotatecube(theta,phi)
+            print 'calculating taus'
             tempcube.taus(nu)
-        f=lambda x : func(x,self.length, x.size)
+#        f=lambda x : Cfunc(x,self.length, x.size)
 #        f=lambda x : integratePY(x,self.length)
         s=tempcube.dt.shape
-        source=(tempcube.eps/tempcube.kap)
+        source=(tempcube.eps/(4*pi)/tempcube.kap)
         source[isnan(source)]=0
-        arr=empty((s[0],s[1],2*s[2]))
         tempcube.dt[tempcube.dt<1e-30]=1e-30 #dont allow tau of cell to be less than 1e-30
-        arr[:,:,::2]=tempcube.dt[:,:,::-1]   #invert z axis so we integrate from the far side towards observer over the z axis
-        arr[:,:,1::2]=source[:,:,::-1]       #source function (eps/kap)
-        out=apply_along_axis(f,-1,arr)    # to c after the rotation and do the integrating there
-        #apply_along_axis takes 1D z slices through the cube and passes them to integrate
+        print('integrating')
+        if transpose:out=integrate((source.T)[...,::-1],(tempcube.dt.T)[...,::-1]) #integrate from back to front so we are looking down from from +z
+        else:        out=integrate(source[...,::-1],tempcube.dt[...,::-1]) 
         pix =abs(self.length/dist)
-        print pix
-        if returnRotatedCube:return out*pix*pix*SQRAD2STR*1e26,tempcube 
-        else :               return out*pix*pix*SQRAD2STR*1e26 #output in mJy/pix
+        self.im=out*pix*pix*SQRAD2STR*1e26
+        if returnRotatedCube:return self.im,tempcube 
+        else :               return self.im #output in mJy/pix
+
