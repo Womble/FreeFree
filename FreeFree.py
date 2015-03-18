@@ -6,6 +6,9 @@ from utils import almost_eq
 
 from emiss import emiss,eDensity
 
+plankCGS=cns.h*1e7
+cCGS=cns.c*100
+kbCGS=cns.Boltzmann*1e7
 
 #from ctypes import *
 #from numpy.ctypeslib import ndpointer
@@ -158,14 +161,37 @@ Length is the size of one cell in the Rho and Temp cubes"""
 #        f=lambda x : Cfunc(x,self.length, x.size)
 #        f=lambda x : integratePY(x,self.length)
         s=tempcube.dt.shape
-        source=(tempcube.eps/(4*pi)/tempcube.kap)
+        source=(tempcube.eps/tempcube.kap)
         source[isnan(source)]=0
         tempcube.dt[tempcube.dt<1e-30]=1e-30 #dont allow tau of cell to be less than 1e-30
         print('integrating')
         if transpose:out=integrate((source.T)[...,::-1],(tempcube.dt.T)[...,::-1]) #integrate from back to front so we are looking down from from +z
         else:        out=integrate(source[...,::-1],tempcube.dt[...,::-1]) 
         pix =abs(self.length/dist)
-        self.im=out*pix*pix*SQRAD2STR*1e26
+        self.im=out*pix*pix*SQRAD2STR*1e23*1000
         if returnRotatedCube:return self.im,tempcube 
         else :               return self.im #output in mJy/pix
 
+def bb(T, nu):
+    return 2*plankCGS*nu**3/cCGS**2 * 1/(exp(plankCGS*nu/kbCGS/T)-1)
+
+
+def test():
+    "check RT is working by comparing the fluxes from an optically thick and thin sphere to the analytic formulae"
+    x,y,z=mgrid[-1:1:100j,-1:1:100j,-1:1:100j]
+    rho=ones((100,100,100), dtype=float)*cns.m_p*1000*10
+    rho[sqrt(x*x+y*y+z*z)>0.9]*=1.0e-10
+    temp=ones_like(rho)*1.0e4
+    RT=freeFree(rho,temp,1.5e11) #RT for a sphere 1au in diameter @T=10,000 n=10/cc
+    thinim=RT.rayTrace(1.0e9)
+    ne=rho/(cns.m_p*1000)
+    thinAnalytic=(6.8e-38*ne**2*RT.gaunts[0]/sqrt(1.0e4)*exp(-cns.h*1e9/cns.Boltzmann/1.0e4)).sum()*RT.length**3*1e23/(4*pi*(500*PC2CM)**2)
+    assert almost_eq(thinim.sum()/1000,thinAnalytic, diff=0.1)
+    print "optically thin test ok (ratio %.3f)"%(thinim.sum()/1000/thinAnalytic) #usually a bit out as analytic only inculdes hydrogen, within 10% at low temps
+    rho*=1e7                    #optically thick sphere
+    RT=freeFree(rho,temp,1.5e11)
+    thickim=RT.rayTrace(1.0e9)
+    thickAnalytic=pi*(RT.length*50)**2*bb(1.0e4,1.0e9)*1e23/(500*PC2CM)**2
+    assert almost_eq(thickim.sum()/1000,thickAnalytic, diff=0.1)
+    print "optically thin test ok (ratio %.3f)"%(thickim.sum()/1000/thickAnalytic)
+    return RT
