@@ -7,12 +7,26 @@ def emiss(npls,t , nu):
     
     g=[gaunt(t,z,nu) for z in [1,2,3,6]]# gaunt factors are of order unity 
     npl1,npl2,npl3,npl6=npls
-    ne=npl1 + 2*npl2 + 3*npl3 + 6*npl6
+    ne=npl1.copy()
+    ne+= 2*npl2 
+    ne+= 3*npl3 
+    ne+= 6*npl6
+    ni=npl1.copy()
+    ni+= npl2 
+    ni+= npl3 
+    ni+= npl6
     hnukt = cns.Planck*nu/(cns.Boltzmann*t) #(h nu) / (k_b T)
-    epsff = (6.8e-38*exp(-hnukt)*ne*(g[0]*npl1+g[1]*4.0*npl2+g[2]*9.0*npl3+g[3]*36.0*npl6))/sqrt(t) # ff emission co-efficient from rybiki & lightman 5.14b
+    gfac=(g[0]*npl1+g[1]*4.0*npl2+g[2]*9.0*npl3+g[3]*36.0*npl6)
+    epsff = (6.8e-38*exp(-hnukt)) # ff emission co-efficient from rybiki & lightman 5.14b
+    epsff*=ni
+    epsff*=gfac
+    epsff/=sqrt(t)
     epsff /=(4*pi)
-    kapff = (0.01765/((nu*nu)*pow(t,1.5)))*ne*(g[0]*npl1 + g[1]*4.0*npl2 + g[2]*9.0*npl3) # ff absorption co-efficient from rybiki & lightman 5.19b
-
+    kapff = (0.01765/((nu*nu))) # ff absorption co-efficient from rybiki & lightman 5.19b
+    kapff/=pow(t,1.5)
+    kapff*=ni
+    kapff*=gfac
+    
     return epsff,kapff,g
 
 def eDensity(rho,t):
