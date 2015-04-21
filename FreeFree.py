@@ -2,7 +2,8 @@ from numpy import *
 from scipy import constants as cns
 from scipy.ndimage.interpolation import rotate
 from scipy.stats.mstats import gmean
-from utils import almost_eq
+from utils import almost_eq,Rx,Ry,Rz
+import gc
 
 from emiss import emiss,eDensity
 
@@ -87,12 +88,13 @@ def trimCube(cube, thresh):
     return sl
 
 class freeFree():
-    def __init__(self,Rho, Temp, Length):#, v=None):
+    def __init__(self,Rho, Temp, Length, Velocity):#, v=None):
         """Rho is ion density cube in g/cm^3
 Temp is temperature cube in K (Rho and Temp need to have the same shape)
 Length is the size of one cell in the Rho and Temp cubes"""
         self.rho=Rho
         self.t=Temp
+        self.V=Velocity
         self.length=Length #length per unit cell (in cms, ew)
 
     def ne(self):
@@ -115,11 +117,17 @@ Length is the size of one cell in the Rho and Temp cubes"""
         rho=self.rho.copy()
         t=self.t.copy()
         if (int(theta)%360)!=0:
-            rho =rotate(rho,theta, (1,2), mode='nearest', order=1)
-            t=   rotate(t,  theta, (1,2), mode='nearest', order=1)
+            rho =rotate(rho,theta, (0,2), mode='nearest', order=1)
+            t=   rotate(t,  theta, (0,2), mode='nearest', order=1)
+            M=Ry(theta*pi/180)
+            f=lambda x : M*x
+            self.V=np.apply_along_axis(f,0, self.V)
         if (int(phi)%360)!=0:
             rho =rotate(rho,phi, (0,1), mode='nearest', order=1)
             t=rotate   (t,  phi, (0,1), mode='nearest', order=1)
+            M=Rz(theta*pi/180)
+            f=lambda x : M*x
+            self.V=np.apply_along_axis(f,0, self.V)
         rho[rho<1e-30]=1e-30
         t[t<1]=1
         thresh=rho
@@ -172,11 +180,20 @@ Length is the size of one cell in the Rho and Temp cubes"""
         if returnRotatedCube:return self.im,tempcube 
         else :               return self.im #output in mJy/pix
 
-    def spectrum(nus, theta=0, phi=0, dist=500, trim=1):
+    def spectrum(self,nus, theta=0, phi=0, dist=500, trim=1):
         if theta or phi:
             self.rotateCube(theta, phi, trim)
         vals=[]
         for nu in nus:
+            try: 
+                del self.dt
+                del self.npls
+                del self.eps
+                del self.kap
+                del self.gaunts
+            except AttributeError:
+                None
+            gc.collect()
             if nu<1e6 : nu*=1e9 # assume vals < 1MHz are intended to be in GHz
             vals.append(self.rayTrace(nu, dist=dist, suppressOutput=True).sum())
         return vals
