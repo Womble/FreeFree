@@ -120,14 +120,14 @@ Length is the size of one cell in the Rho and Temp cubes"""
             rho =rotate(rho,theta, (0,2), mode='nearest', order=1)
             t=   rotate(t,  theta, (0,2), mode='nearest', order=1)
             M=Ry(theta*pi/180)
-            f=lambda x : M*x
-            self.V=np.apply_along_axis(f,0, self.V)
+            f=lambda x : (x*M).flat
+            self.V=apply_along_axis(f,0, self.V)
         if (int(phi)%360)!=0:
             rho =rotate(rho,phi, (0,1), mode='nearest', order=1)
             t=rotate   (t,  phi, (0,1), mode='nearest', order=1)
             M=Rz(theta*pi/180)
-            f=lambda x : M*x
-            self.V=np.apply_along_axis(f,0, self.V)
+            f=lambda x : (x*M).flat
+            self.V=apply_along_axis(f,0, self.V)
         rho[rho<1e-30]=1e-30
         t[t<1]=1
         thresh=rho
