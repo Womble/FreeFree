@@ -36,7 +36,7 @@ def eDensity(rho,t):
     nhe =rho/(cns.m_p*1000*4)*0.1
     ncno=rho/(cns.m_p*1000*14.24)*0.01
 
-    npl1=nh+(t<1e6)*nhe
+    npl1=nh+(t<3e5)*nhe
     npl2=(t<3e5)*ncno+(t>3e5)*nhe
     npl3=logical_and(t>3e5,t<1e6)*ncno
     npl6=(t>1e6)*ncno
