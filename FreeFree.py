@@ -115,34 +115,51 @@ Length is the size of one cell in the Rho and Temp cubes"""
 
     def rotatecube(self,theta=0,phi=0, trim=0):
         "angles in degrees"
-        rho=self.rho.copy()
-        t=self.t.copy()
         if (int(theta)%360)!=0:
-            rho =rotate(rho,theta, (0,2), mode='nearest', order=1)
-            t=   rotate(t,  theta, (0,2), mode='nearest', order=1)
+            rho=rotate(self.rho,theta, (0,2), mode='nearest', order=1)
+            t =rotate(self.t,  theta, (0,2), mode='nearest', order=1)
+            v =rotate(self.V,  theta, (1,3), mode='nearest', order=1)
             M=Ry(theta*pi/180)
             M[abs(M)<(finfo(1.0).eps*10)]=0 #set numbers with abs value less than 10 times the floating point epsilon to 0
             f=lambda x : (x*M).flat
-            self.V=apply_along_axis(f,0, self.V)
-        if (int(phi)%360)!=0:
-            rho =rotate(rho,phi, (0,1), mode='nearest', order=1)
-            t=rotate   (t,  phi, (0,1), mode='nearest', order=1)
-            M=Rz(theta*pi/180)
+            v=apply_along_axis(f,0, v)
+            if (int(phi)%360)!=0:
+                rho=rotate(rho,phi, (0,1), mode='nearest', order=1)
+                t  =rotate(t,  phi, (0,1), mode='nearest', order=1)
+                v  =rotate(v,  phi, (1,2), mode='nearest', order=1)
+                M=Rz(phi*pi/180)
+                M[abs(M)<(finfo(1.0).eps*10)]=0
+                f=lambda x : (x*M).flat
+                v=apply_along_axis(f,0, v)
+        elif (int(phi)%360)!=0:
+            rho=rotate(self.rho,phi, (0,1), mode='nearest', order=1)
+            t  =rotate(self.t,  phi, (0,1), mode='nearest', order=1)
+            v  =rotate(self.V,  phi, (1,2), mode='nearest', order=1)
+            M=Rz(phi*pi/180)
             M[abs(M)<(finfo(1.0).eps*10)]=0
             f=lambda x : (x*M).flat
-            self.V=apply_along_axis(f,0, self.V)
+            v=apply_along_axis(f,0, v)
+        else:
+            rho=self.rho.copy()
+            t=self.t.copy()
+            v=self.V.copy()
         rho[rho<1e-30]=1e-30
         t[t<1]=1
         thresh=rho
         if trim:
             for _ in rho.shape:
-                thresh=gmean(thresh)
+                thresh=gmean(thresh, axis=0)
             sl=trimCube(rho, thresh*5)
             self.rho=rho[sl]
             self.t=t[sl]
+            print sl,v.shape, self.V.shape
+            sl=[slice(0,3)]+sl
+            print sl,v.shape, self.V[sl].shape
+            self.V=v[sl]
         else:
             self.rho=rho
             self.t=t
+            self.V=v
         try:
             self.dt[...]=0
         except AttributeError:
