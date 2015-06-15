@@ -89,11 +89,12 @@ def trimCube(cube, thresh):
     return sl
 
 class freeFree():
-    def __init__(self,Rho, Temp, Length, velocity):#, v=None):
+    def __init__(self,Rho, I, Temp, Length, velocity):#, v=None):
         """Rho is ion density cube in g/cm^3
 Temp is temperature cube in K (Rho and Temp need to have the same shape)
 Length is the size of one cell in the Rho and Temp cubes"""
-        self.rho=Rho
+        self.rho=Rho*I
+        self.rhoN=Rho*(1-I)
         self.t=Temp
         self.V=velocity
         self.length=Length #length per unit cell (in cms, ew)
@@ -108,9 +109,16 @@ Length is the size of one cell in the Rho and Temp cubes"""
         #sigma2=(cns.Boltzmann*self.t/cns.m_p/cns.speed_of_light**2)*centre_nu**2
         #line_eps+=self.ne()*self.npls[0]* 2.076e-11*2.2/np.sqrt(self.t) * exp(-(nu-centre_nu)**2/2/sigma2)
 
-    def taus(self,nu):
+    def taus(self,nu, lines=0):
         self.npls=eDensity(self.rho,self.t)
         self.epsNkap(nu)
+        if lines :
+            self.kap+=linelineAbs_cgs(nu, self.RhoN, self.t, v=0) #no velocity implemented yet
+            ne= 2*self.npls2 
+            ne+= self.npls1
+            ne+= 3*self.npls3 
+            ne+= 6*self.npls6
+            self.eps+=lineEmiss_cgs  (nu, ne,  self.t, v=0):
         self.dt=self.kap*self.length
 
     def rotatecube(self,theta=0,phi=0, trim=0):
@@ -165,7 +173,7 @@ Length is the size of one cell in the Rho and Temp cubes"""
         except AttributeError:
             None
         
-    def rayTrace(self,nu,theta=0,phi=0, dist=500, returnRotatedCube=0, transpose=0, suppressOutput=False):
+    def rayTrace(self,nu,theta=0,phi=0, dist=500, lines=0, returnRotatedCube=0, transpose=0, suppressOutput=False):
         "integrate along the specified axis after rotating the cube through phi and theta (in deg)"
         if dist<1e9: dist*=PC2CM #assume distances less than 10^9 are given im parsecs, larger in cm
 

@@ -22,7 +22,7 @@ def voigt(a,u):
 
 def boundFreeCross (n, k):
     r"gives the bound free cross section in units of square Bohr radii for the capture to the nth level at normalised wavenumber k (k=\omega_n / \omega where \omega_n is the frequency of the inf->n transition"
-    if k<=1:return 64*np.pi/(3**1.5*137)*n*k**3
+    if k<=1:return 0.2824407769123843*n*k**3 #64pi/(3^1.5*137)
     else :return 0
 
 def lineAbs_cgs(nu, Nneut, T, v=0):
