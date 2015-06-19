@@ -11,7 +11,7 @@ Einf=cns.physical_constants ['Rydberg constant times hc in J'][0]
 C0=cns.speed_of_light
 a0=cns.physical_constants ['Bohr radius'][0]*100 #in cm
 ev=cns.electron_volt
-LTE10K=2*np.arange(1,10)**2/np.exp(-Einf*(1.0/np.arange(1,10)**2)/(cns.Boltzmann*1e4)) # Thermal distribution of electron levels fo 10K H
+LTE10K=2*np.arange(1,20)**2/np.exp(-Einf*(1.0/np.arange(1,20)**2)/(cns.Boltzmann*1e4)) # Thermal distribution of electron levels fo 10K H
 LTE10K/=LTE10K.sum()                                                                   # Normalised
 
 gamma=np.array([0,  4.69669480e+08,   9.98102940e+07,   3.01775990e+07,    1.15506010e+07,   5.18981800e+06,   2.90148700e+06,      1.67727900e+06,   1.03433400e+06]) #natural widths of hydrogen levels
@@ -31,7 +31,7 @@ def lineAbs_cgs(nu, Nneut, T, v=0):
     if almost_eq(T, 1e4): 
         N=LTE10K
     else:
-        N=2*np.arange(1,10)**2/np.exp(Einf*(0-1.0/np.arange(1,10)**2)/(cns.Boltzmann*T)) # Thermal distribution of electron levels fo 10K H
+        N=2*np.arange(1,20)**2/np.exp(Einf*(0-1.0/np.arange(1,20)**2)/(cns.Boltzmann*T)) # Thermal distribution of electron levels fo 10K H
         N/=N.sum()                                                                       # Normalised
     for n in xrange(1,10):
         omega_n=Einf*(1.0/n**2)/cns.hbar*(1+v/C0)
@@ -42,10 +42,10 @@ def lineAbs_cgs(nu, Nneut, T, v=0):
 def dopplerWidth(nu0, T):
     return nu0/C0*math.sqrt(2*cns.Boltzmann*T/cns.m_p)
 
-def lineProfile_cgs(nu, n, Ne, T):
+def lineProfile_cgs(nu, n, Ne, T, v=0):
 
-    nu0=(Einf/n**2)/cns.h
-    Vd=dopplerWidth(nu0,T)
+    nu0=(1+v/C0)*(Einf/n**2)/cns.h
+    Vd=dopplerWidth(nu0,T)*100 # v in cm/s
     if n==1:
         return np.exp(-(nu-nu0)**2/Vd**2)/(Vd*math.sqrt(pi)) #ground state has no intrinsic width and unbound has practically none so we run into numerical issues trying to calc a voigt profile, instead just do Doppler
     else:

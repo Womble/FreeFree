@@ -2,15 +2,18 @@ from numpy import *
 from scipy import constants as cns
 from scipy.ndimage.interpolation import rotate
 from scipy.stats.mstats import gmean
-from utils import almost_eq,Rx,Ry,Rz
+from utils import almost_eq,Rx,Ry,Rz,Planck
 import gc
 
-from emiss import emiss,eDensity
+from emiss import emiss,eDensity, dustOpacity
 import line
 
 plankCGS=cns.h*1e7
 cCGS=cns.c*100
 kbCGS=cns.Boltzmann*1e7
+
+Gas2Dust=100 #neutral gas to dust mass ratio
+DustDestTemp=3000 #dust destruction temperature
 
 #from ctypes import *
 #from numpy.ctypeslib import ndpointer
@@ -27,28 +30,32 @@ kbCGS=cns.Boltzmann*1e7
 PC2CM = 3.085678e18 #1pc in cm
 SQRAD2STR = 4/pi #convert square radians to steradians
 
+
+
 def integrate (source, dt):
     assert source.shape == dt.shape
     s=source.shape
     out=zeros_like(source[...,0])
-    tmp=out.copy()
+    tmp=zeros_like(source[...,0])
     mask=zeros_like(out, dtype=bool)
     for i in xrange(s[-1]):
-        if dt[...,i].max()>0.1:
-            n=5+min(20, int(0.75/dt[...,i].max()))
-            for _ in xrange(n):
-                tmp[...]=source[...,i]
-                tmp-=out
-                tmp*=dt[...,i]
-                tmp/=n
-                out+=tmp
-            mask[...]=dt[...,i]>10
-            out[mask]=source[...,i][mask]
-        else:
-            tmp[...]=source[...,i]
-            tmp-=out
-            tmp*=dt[...,i]
-            out+=tmp
+#        mask[...]=dt[...,i]>10
+#        MAX=dt[...,i][lNot(mask)].max()
+#        if MAX>0.1:
+#            n=max(5+min(20, int(0.75/MAX)), m*5) #for dts at least 0.1 somewhere take between 12 and 25 cycles of integration or 5 times the largest dt (ensuring steps are in at most 0.2)
+#            for _ in xrange(n):
+#                tmp[...]=source[...,i]
+#                tmp-=out
+#                tmp*=dt[...,i]
+#                tmp/=n
+#                out+=tmp            
+#           out[mask]=source[...,i][mask]
+#       else:
+#           tmp[...]=source[...,i]
+#           tmp-=out
+#           tmp*=dt[...,i]
+#           out+=tmp
+        out=source[...,i]+exp(-dt[...,i])*(out-source[...,i])
     return out
 
 
@@ -89,14 +96,14 @@ def trimCube(cube, thresh):
     return sl
 
 class freeFree():
-    def __init__(self,Rho, I, Temp, Length, velocity):#, v=None):
+    def __init__(self,RhoI, RhoN, Temp,  Velocity, Length):#, v=None):
         """Rho is ion density cube in g/cm^3
 Temp is temperature cube in K (Rho and Temp need to have the same shape)
 Length is the size of one cell in the Rho and Temp cubes"""
-        self.rho=Rho*I
-        self.rhoN=Rho*(1-I)
+        self.rho=RhoI
+        self.rhoN=RhoN
         self.t=Temp
-        self.V=velocity
+        self.V=Velocity
         self.length=Length #length per unit cell (in cms, ew)
 
     def ne(self):
@@ -109,16 +116,21 @@ Length is the size of one cell in the Rho and Temp cubes"""
         #sigma2=(cns.Boltzmann*self.t/cns.m_p/cns.speed_of_light**2)*centre_nu**2
         #line_eps+=self.ne()*self.npls[0]* 2.076e-11*2.2/np.sqrt(self.t) * exp(-(nu-centre_nu)**2/2/sigma2)
 
-    def taus(self,nu, lines=0):
+    def taus(self,nu, lines=0, dust=0):
         self.npls=eDensity(self.rho,self.t)
         self.epsNkap(nu)
         if lines :
-            self.kap+=linelineAbs_cgs(nu, self.RhoN, self.t, v=0) #no velocity implemented yet
+            self.kap+=linelineAbs_cgs(nu, self.RhoN, self.t, self.V[2,...]*100000) #velocity is vz (ie los) in cm/s
             ne= 2*self.npls2 
             ne+= self.npls1
             ne+= 3*self.npls3 
             ne+= 6*self.npls6
-            self.eps+=lineEmiss_cgs  (nu, ne,  self.t, v=0):
+            self.eps+=lineEmiss_cgs  (nu, ne,  self.t, self.V[2,...]*100000)
+        if dust:
+            mask=self.t<DustDestTemp
+            d_kap=dustOpacity(cns.speed_of_light/nu*1e6)*self.rhoN[mask]/Gas2Dust
+            self.kap[mask]+=d_kap
+            self.eps[mask]+=d_kap*Planck(nu,self.t[mask],cgs=True)
         self.dt=self.kap*self.length
 
     def rotatecube(self,theta=0,phi=0, trim=0):
@@ -190,7 +202,7 @@ Length is the size of one cell in the Rho and Temp cubes"""
                 self.taus(nu)
                 self.lastnu=nu
         else :
-            tempcube=freeFree(self.rho.copy(), self.t.copy(), self.length)
+            tempcube=freeFree(self.rho.copy(), self.rhoN.copy(), self.t.copy(), self.V.copy(), self.length)
             tempcube.rotatecube(theta,phi)
             if not(suppressOutput): print 'calculating taus'
             tempcube.taus(nu)
@@ -234,10 +246,10 @@ def test():
     "check RT is working by comparing the fluxes from an optically thick and thin sphere to the analytic formulae"
     x,y,z=mgrid[-1:1:100j,-1:1:100j,-1:1:100j]
     rho=ones((100,100,100), dtype=float)*cns.m_p*1000*1
-    rho[sqrt(x*x+y*y+z*z)>0.9]*=1.0e-10
+    rho[sqrt(x*x+y*y+z*z)>0.999]*=1.0e-10
     temp=ones_like(rho)*1.0e4
 
-    RT=freeFree(rho,temp,1.5e11) #RT for a sphere 1au in diameter @T=10,000 n=1/cc
+    RT=freeFree(rho,zeros_like(rho),temp, zeros_like([rho,rho,rho]),1.5e11) #RT for a sphere 1au in diameter @T=10,000 n=1/cc
     thinim=RT.rayTrace(1.0e9)
     ne=rho/(cns.m_p*1000)
     thinAnalytic=(6.8e-38*ne**2*RT.gaunts[0]/sqrt(1.0e4)*exp(-cns.h*1e9/cns.Boltzmann/1.0e4)).sum()*RT.length**3*1e23/(4*pi*(500*PC2CM)**2)
@@ -251,7 +263,7 @@ def test():
     
 
     rho*=1e8                    #optically thick sphere
-    RT=freeFree(rho,temp,1.5e11)
+    RT=freeFree(rho,zeros_like(rho),temp,zeros_like([rho,rho,rho]),1.5e11)
     thickim=RT.rayTrace(1.0e9)
     thickAnalytic=pi*(RT.length*50)**2*bb(1.0e4,1.0e9)*1e23/(500*PC2CM)**2
     assert almost_eq(thickim.sum()/1000,thickAnalytic, diff=0.01)
