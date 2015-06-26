@@ -120,12 +120,12 @@ Length is the size of one cell in the Rho and Temp cubes"""
         self.npls=eDensity(self.rho,self.t)
         self.epsNkap(nu)
         if lines :
-            self.kap+=linelineAbs_cgs(nu, self.RhoN, self.t, self.V[2,...]*100000) #velocity is vz (ie los) in cm/s
-            ne= 2*self.npls2 
-            ne+= self.npls1
-            ne+= 3*self.npls3 
-            ne+= 6*self.npls6
-            self.eps+=lineEmiss_cgs  (nu, ne,  self.t, self.V[2,...]*100000)
+            self.kap+=line.lineAbs_cgs(nu, self.rhoN, self.t, self.V[2,...]*100000) #velocity is vz (ie los) in cm/s
+            ne= 2*self.npls[1] 
+            ne+= self.npls[0]
+            ne+= 3*self.npls[2] 
+            ne+= 6*self.npls[3]
+            self.eps+=line.lineEmiss_cgs  (nu, ne,  self.t, self.V[2,...]*100000)
         if dust:
             mask=self.t<DustDestTemp
             d_kap=dustOpacity(cns.speed_of_light/nu*1e6)*self.rhoN[mask]/Gas2Dust
@@ -199,7 +199,7 @@ Length is the size of one cell in the Rho and Temp cubes"""
                 if not(suppressOutput): print 'reusing dt'
             else:
                 if not(suppressOutput): print 'calculating taus'
-                self.taus(nu)
+                self.taus(nu, lines=lines)
                 self.lastnu=nu
         else :
             tempcube=freeFree(self.rho.copy(), self.rhoN.copy(), self.t.copy(), self.V.copy(), self.length)
