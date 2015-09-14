@@ -67,9 +67,18 @@ def einsteinB(FROM,TO):
     return B
 
 def voigt(a,u):
-    f=lambda y: np.exp(-y**2)/(a*a+(u-y)**2)
-    return a/pi * quad(f,-inf, +inf)[0]
+    if np.ndarray in [type(a),type(u)]:
+        out=np.zeros_like(a);i=0
+        for aa,uu in zip(a.flat,u.flat):
+            f=lambda y: np.exp(-y**2)/(aa*aa+(uu-y)**2)
+            out.flat[i]= aa/pi * quad(f,-inf, +inf)[0]
+            i+=1
+        return out
+    else:
+        f=lambda y: np.exp(-y**2)/(a*a+(u-y)**2)
+        return a/pi * quad(f,-inf, +inf)[0]
 
+<<<<<<< HEAD
 def _lineAbs_cgs(nu, Ne, Nneut, u, l, T, v=0, lineProfile=1):
     "absorption coeficient due to bound free transitions with the absorbing material moving at v relative to the observer (+ve = blue shifted)"
 #    a=0
@@ -123,7 +132,7 @@ def M(n,T):
 def _lineEmiss_cgs (nu, Ne, Nn, u, l, T, v=0, lineProfile=1):
     """gives the emissivity at the line centre
 ne :elsectron number density (cm^-3)
-n: recombinations to which hydrogen state
+nu: recombinations to which hydrogen state
 T: temperature (K)
 v: velocity of the emitting material (+ve= towards observer)"""
     if u==np.inf:   
